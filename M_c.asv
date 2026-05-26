@@ -1,0 +1,52 @@
+function [Mc, M, z] = M_c(x, c, z_0, g, a, i0, caseH, caseF)
+% Finds the derivative of M with respect to z.
+
+[n,~]=size(x);
+[mh,dz]=size(c);
+
+% z and z_c:
+
+z=zeros(n,dz);              %z
+z_c=zeros(n,dz,mh,dz);      % dz/dc
+z(1,:)=z_0;
+z_ant=z(1,:);
+z_c_ant=zeros(dz,mh,dz);
+x_ant=x(1,:);
+
+for l=2:n
+    [H, HzC] = H_and_Hz(x_ant, z_ant, c, caseH); %H and Hz*c
+
+    z(l,:)=tensorprod(H,c,2,1);
+    z_c_new=tensorprod(HzC,z_c_ant,1,1);
+
+    for j=1:dz
+        z_c_new(j,:,j)= z_c_new(j,:,j)+H;
+    end
+
+    z_c(l,:,:,:)=z_c_new;
+
+    z_ant=z(l,:);
+    z_c_ant=z_c_new; 
+    x_ant=x(l,:);
+end
+
+
+[F, Fz] = F_and_Fz(z,true,caseF);
+F_mean = mean(F,1);
+F=F-F_mean;
+f=F*a; fz=tensorprod(Fz,a,2,1);
+[Mz_std, M] = M_z(g,f,fz);
+
+%Backward pass for standardization of Z
+
+sig_z = std(z, 1, 1) + 1e-8;
+z_std = (z - mean(z, 1)) ./ sig_z;
+
+mean_Mz = mean(Mz_std, 1);
+mean_Mz_Z = mean(Mz_std .* z_std, 1);
+
+Mz_raw = (1 ./ sig_z) .* (Mz_std - mean_Mz - z_std .* mean_Mz_Z);
+
+Mc=tensorprod(Mz_raw(i0:n,:),z_c(i0:n,:,:,:),[1 2],[1 2]);
+
+

@@ -1,0 +1,670 @@
+% OTBP with z representing the past of x.
+
+% For all time-dependent arrays, the first index denotes time.
+
+% size(c) = (mh, dz)
+
+% Meaning of the various tensors:
+
+% x(l,j): j'the component of the observation x at time l.
+% y(l,j): j'the component of T(x(l,:), z(l,:)), where z = U_k (z{k}).
+
+% z{k}(l, j): j'th component of z{k} at time l.
+
+% c{k}(i,j): z{k}(l+1},j) = sum_i H(z{k}(l,:), x(l,:))[i] c{k}(i, j)
+
+% H(l,i) = H(z{k}(l,:), x(l,:))[i]
+
+% Hz(l,i,j): dH(l,i)/dz{k}(l,j);
+
+% HzC(l,h,j): sum_i Hz(l,i,h) c(i,j)
+
+% f{k}(l), g{k}(l): functions f(z{k}) and g{k}(y) at time l.
+% a{k}, b{k}: f{k} = F a{k}, g{k} = G(y) b{k} 
+
+% (b{k} and g{k} are not used, they are only kept as a record of what 
+% happened in step 1 of stage k). 
+
+% F(l,j): j'th component of F(z{k}(l))
+% G(l,j): j'the component of G(y(l))
+
+% Fz(l,j,h) = dF(l,l)/dz{k}(l,h)
+% Gy(l,j,h) = dG(l,j)/dy(l,h)
+
+% Mc(i,j): dM/dc(i,j).
+
+% Mz(l,j); dM/dz{k}(l,j)
+
+clear all
+
+%Example='Markov_1';
+% Example='Markov_2';
+%Example='Markov_3';
+% Example='MASV';
+Example = 'Garch';
+%Example = 'Kalman';
+
+fprintf('Data is %s\n',Example)
+
+dz=1; % Dimension of z sought.
+
+Data_OTBP_with_past; %Reads or generates x.
+
+i0=200; % Warm-up period for z.
+x_full=x;
+x= x_full(i0+1:end,:);
+
+% Slice variables for plotting and diagnostics
+
+if exist('noise', 'var'), noise=noise(i0+1:end, :); end
+if exist('var_ev', 'var'), var_ev=var_ev(i0+1:end, :); end
+if exist('epsi', 'var'), epsi=epsi(i0+1:end, :); end
+if exist('P_kalman', 'var'), P_kalman=P_kalman(i0+1:end, :); end
+if exist('f_star', 'var'), f_star=f_star(i0+1:end, :); end
+
+
+% caseF='oneD';
+caseF='L_and_Q';
+%caseF='L_and_Q_bounded';
+%caseF='Random_Fourier'; %Really bad, RSE around 0.02-0.05
+%caseF='Gauss_Hermite_RBF'; %better than RBF_Kernels with quantile roots
+%caseF='Neural_Expanded'; %
+%caseF='Hermite_Expanded'; %good but not good enough, RSE is %0.007-0.012
+%caseF='Cubic_Splines'; %to be completed, not good
+%caseF='Deterministic_Neural'; %better than Neural_Expanded
+%caseF='RBF_Kernels'; 
+caseG='oneD_L_and_Q';
+% caseH='oneD_Linear';
+% caseH='oneD_more';
+%caseH='Linear_in_z';
+caseH='Linear_in_z_unbounded';
+
+fprintf('F is %s\n',caseF)
+
+
+switch caseG
+    case 'oneD_L'
+        my=1;
+    case 'oneD_L_and_Q'
+        my=2;
+end
+
+[n,~]=size(x);
+
+eta_0=0.01;
+eta_min=0.001;
+nsmax=5000;
+
+
+%switch caseH
+%    case 'oneD_Linear'
+%        cc_0=[0.5; 0.5]; 
+%    case 'oneD_more'
+%        cc_0=[0.5; 0.5; 0.5];
+        
+%    case {'Linear_in_z', 'Linear_in_z_unbounded'} 
+%        cc_0 = 0.1 * rand(dz+3, dz);   
+%        cc_0(1, :) = 0.01 * rand();                
+%        cc_0(dz+2, :) = 0.5 * rand(1, dz); 
+        
+%    case 'Linear_in_z_bounded'
+%        cc_0=0.1*rand(dz+2,dz);
+%        cc_0(dz+1,:)=0.5*rand(1,dz);
+%end
+
+optimizer_type='Adam';
+%optimizer_type='Gradient descent';
+
+num_restarts = 10; % Multistart hyperparameter
+corr_check = true; %Prints max correlation for step 1 vs true GARCH
+grad_check = false; %Prints analytical vs numerical gradient for step 1
+grad_check_2 = false; %Prints analytical vs numerical gradient for step 2
+intermediate_logs = true;
+z_0=zeros(1,dz); % Fixed z at time 0.
+
+sigma_0 = max(0.001,1.96/(sqrt(n))); % Threshold of acceptable correlations.
+eps=0.00002; % Termination criterion for step 1.
+Lymin=eps/sqrt(n);
+
+Kmax=6;
+Cpr=zeros(1,nsmax*Kmax); Ppr=Cpr; etapr=Cpr; Lampr=zeros(Kmax,nsmax*Kmax);
+sigma=zeros(1,Kmax); lambda=sigma;
+
+fprintf('Kmax is %d, num_restarts is %d\n', Kmax, num_restarts);
+fprintf('\n');
+
+if strcmp(Example, 'Garch')
+    sigma_t = sqrt(var_ev);
+    predicted_val = var(sigma_t) / 2;
+    E_sigma = mean(sigma_t);
+    y_star = noise .* E_sigma;
+    fprintf('Predicted Cost Value  : %.4f\n', predicted_val);
+end
+
+
+f=cell(Kmax,1); g=f; a=f; b=f; c=f; P=f; Py=f; % sigma=f;
+
+% --- ADDED: Initialize cells for offline T_inv reconstruction ---
+F_mean_cell = cell(Kmax, 1);
+mu_z_cell = cell(Kmax, 1);
+sig_z_cell = cell(Kmax, 1);
+% ----------------------------------------------------------------
+
+y=x;
+
+% First step 1:
+
+% z=zeros(n,dz);
+%z=0.1*rand(n,dz);
+
+% z(2:n,1)=x(1:n-1,:);
+%z(1,:)=z_0;
+
+% z = Find_z(x, cc_0, z_0, caseH);
+% 
+% [F, ~] = F_and_Fz(z,false,caseF); % Matrix F.
+% F_mean = mean(F,1);
+% F=F-F_mean;
+% 
+% [G, ~] = G_and_Gy(y,false,caseG); % G.
+% G_mean = mean(G,1);
+% G=G-G_mean;
+
+k=0;
+
+%Loop over stages.
+
+not_done_yet=true;
+jc=0;
+
+while not_done_yet
+
+    [G, ~] = G_and_Gy(y,false,caseG); % G.
+    G_mean = mean(G,1);
+    G=G-G_mean;
+
+    best_corr = -1;
+    best_cc = []; best_z = []; best_F = []; best_aa = []; best_bb = []; best_cc_0 = [];
+
+    % Multistart loop generates different random initialization for each restart
+    for restart = 1:num_restarts
+        switch caseH
+            case 'oneD_Linear'
+                cc_0=[0.5; 0.5]; 
+            case 'oneD_more'
+                cc_0=[0.5; 0.5; 0.5];
+            case {'Linear_in_z', 'Linear_in_z_unbounded'} 
+                cc_0 = 0.1 * rand(dz+3, dz);   
+                cc_0(1, :) = 0.01 * rand();                
+                cc_0(dz+2, :) = 0.5 * rand(1, dz); 
+            case 'Linear_in_z_bounded'
+                cc_0=0.1*rand(dz+2,dz);
+                cc_0(dz+1,:)=0.5*rand(1,dz);
+            case 'GRU_Equivalent'
+                dim_H = 3*dz + 4;
+                cc_0 = 0.1 * rand(dim_H, dz);
+                cc_0(1, :) = 0.01 * rand(); % to prevent initial bias    
+        end
+
+        % Compute full z then truncate it to stationary
+        z_full = Find_z(x_full, cc_0, z_0, caseH);
+        z = z_full(i0+1:end, :);
+        z = z + 0.1*randn(n,dz);
+        cc=cc_0;
+
+        [F, ~] = F_and_Fz(z,false,caseF); % Matrix F.
+        F_mean = mean(F,1);
+        F=F-F_mean;
+
+        % eig(F'*F)
+        % stop
+
+        not_done_yet_1=true;
+
+        bb=rand(my,1)-1/2;
+
+        [aa,bb] = fg(F,G,eps,bb);
+        gg=G*bb;
+
+        % M_c has full input, returns sliced output
+        [Mc, M_old, z_old] = M_c(x_full, cc, z_0, gg, aa, i0, caseH, caseF);
+        Mc2=sum(sum(Mc.^2));
+
+        % Gradient check with finite difference
+      
+        if grad_check && restart == 1 && k==0 %only on first restart and stage
+            dc = 1e-6;
+            Mc_num = zeros(size(cc));
+            
+            % Perturb each parameter in the cc matrix
+            for i_c = 1:size(cc, 1)
+                for j_c = 1:size(cc, 2)
+                    cc_pert = cc;
+                    cc_pert(i_c, j_c) = cc(i_c, j_c) + dc;
+                    
+                    % Reevaluate M holding aa and gg fixed
+                    [~, M_pert, ~] = M_c(x_full, cc_pert, z_0, gg, aa, i0, caseH, caseF);
+                    
+                    Mc_num(i_c, j_c) = (M_pert - M_old) / dc;
+                end
+            end
+            
+            fprintf('\n    Gradient Check (Stage %d)    \n', k+1);
+            fprintf('Max Absolute Error: %e\n', max(abs(Mc(:) - Mc_num(:))));
+            disp('Analytical Mc:'); disp(Mc);
+            disp('Numerical Mc (Finite Diff):'); disp(Mc_num);
+            fprintf('\n');
+        end
+
+
+
+        if strcmp(optimizer_type, 'Adam')
+            m_adam = zeros(size(cc));
+            v_adam = zeros(size(cc));
+            t_adam = 0;
+            beta1 = 0.9; beta2 = 0.999; eps_adam = 1e-8;
+        end
+        eta=eta_0;
+        eta_adam = 0.02; %faster than classic gradient descent
+
+        
+        step_count = 0;
+        step_count_min = 35;
+        while not_done_yet_1
+            step_count = step_count + 1;
+
+            if strcmp(optimizer_type, 'Adam')
+                t_adam = t_adam + 1;
+                m_adam = beta1 * m_adam + (1 - beta1) * Mc;
+                v_adam = beta2 * v_adam + (1 - beta2) * (Mc.^2);
+                m_hat = m_adam / (1 - beta1^t_adam);
+                v_hat = v_adam / (1 - beta2^t_adam);
+
+                %Adam incorporates adaptive step here
+                
+                step_dir = m_hat ./ (sqrt(v_hat) + eps_adam);
+                
+                cc = cc + eta_adam * step_dir; 
+            else
+                % Classic gradient step
+                step_dir = Mc;
+                cc = cc + eta * step_dir;
+            end
+
+            [F, ~] = F_and_Fz(z_old,false,caseF); 
+            F_mean = mean(F,1);
+            F=F-F_mean;
+            %Using z_old to compute a,b is a computational shortcut to avoid costly loop
+
+            [aa,bb] = fg(F,G,eps,bb);
+            gg=G*bb;
+
+            [Mc, M_new, z_new] = M_c(x_full, cc, z_0, gg, aa, i0, caseH, caseF);
+
+            if strcmp(optimizer_type, 'Adam')
+                % Adam termination logic, eta_adam is fixed
+                delta_M = abs(M_new - M_old);
+                M_old = M_new;
+                
+                % Terminate if the objective plateaus, or if steps>300
+                if (step_count > step_count_min && delta_M < eps) || step_count > 350
+                    not_done_yet_1 = false;
+                    z = z_new;
+                else
+                    z_old = z_new;
+                end
+            else
+                % Adaptive eta kept for classic gradient descent
+                Mc2=sum(sum(Mc.^2));
+                if(M_new-M_old > 0.5*eta*Mc2)
+                    eta=1.01*eta;
+                else
+                    eta=0.81*eta;
+                end
+
+                delta_z=norm(z_new-z_old)/norm(z_old);
+                M_old=M_new;
+                if(delta_z < eps)
+                    not_done_yet_1=false;
+                    z=z_new;
+                else
+                    z_old=z_new;
+                end
+            end        
+        
+        
+        end
+        
+        % Compute final correlation for this restart
+        [F, ~] = F_and_Fz(z,false,caseF);
+        F_mean = mean(F,1);
+        F=F-F_mean;
+        ff_temp = F*aa;
+        gg_temp = G*bb;
+        
+        [aa,bb] = fg(F,G,eps,bb);
+        current_corr = abs(corr(ff_temp, gg_temp));
+        
+        if current_corr > best_corr
+            best_corr = current_corr;
+            best_cc = cc;
+            best_z = z;
+            best_F = F;
+            best_aa = aa;
+            best_bb = bb;
+            best_cc_0 = cc_0;
+        end
+    end
+
+    % Adopt params from most successful restart
+    cc = best_cc;
+    z = best_z;
+    F = best_F;
+    aa = best_aa;
+    bb = best_bb;
+    cc_0 = best_cc_0;
+
+    ff=F*aa;
+    gg=G*bb;
+
+    % GARCH theoretical correlation check    
+    if strcmp(Example, 'Garch') && k == 0 && corr_check
+        actual_corr = corr(ff, gg);
+        
+        % Compute correlation with true GARCH coefficients
+        c_true = zeros(size(cc_0)); 
+        
+        c_true(1, 1)    = 0.05; % omega 
+        c_true(2, 1)    = 0.80; % beta  
+        c_true(dz+2, 1) = 0.00; % 0 coeff for x
+        c_true(dz+3, 1) = 0.15; % alpha 
+        
+
+        z_true_full = Find_z(x_full, c_true, z_0, caseH);
+        z_true  = z_true_full(i0+1:end,:);
+        [F_true, ~] = F_and_Fz(z_true, false, caseF);
+        F_true = F_true - mean(F_true, 1);
+        
+        b_init = rand(my, 1) - 0.5;
+        [a_true, b_true] = fg(F_true, G, eps, b_init);
+        
+        theo_corr = corr(F_true * a_true, G * b_true);
+        
+        fprintf('\n- stage 1 step 1 correlation diagnostics -\n');
+        fprintf('Obtained correlation   : %.5f\n', actual_corr);
+        fprintf('Theoretical GARCH correlation : %.5f\n', theo_corr);
+        fprintf('---------------------------------------------\n\n');
+    end
+
+
+    if strcmp(Example, 'Garch') && intermediate_logs
+        RSE = sum((y - y_star).^2) / sum(y_star.^2);
+        eff_Cost = mean((x - y).^2) / 2;
+        actual_corr = corr(ff, gg);
+        fprintf('Diagnostics at end of step 1, stage %d\n', k+1);
+        %fprintf('Current Cost ||x-y||^2/(2T): %.4f\n', eff_Cost);
+        %fprintf('Relative Sqd Error for Y : %.4f\n', RSE);
+        fprintf('Obtained correlation   : %.5f\n', actual_corr);
+        fprintf('\n');
+    end
+
+
+    if(abs(corr(ff,gg)) < 1.5.*sigma_0)
+        not_done_yet=false;
+        fprintf('Corr threshold reached\n');
+    else
+        nf=sqrt(ff'*ff/n);
+        k=k+1;
+        a{k}=aa/nf;
+        f{k}=ff/nf;
+        b{k}=bb;
+        c{k}=cc;
+        
+        % Save values for offline T_inv
+        mu_z_cell{k} = mean(z, 1);
+        sig_z_cell{k} = std(z, 1, 1) + 1e-8;
+        F_mean_cell{k} = F_mean;
+    end
+
+
+    if(not_done_yet)
+
+        % Step 2:
+
+        eta=eta_0;
+
+        y_not_converged=true;
+
+        js=0;
+
+        while y_not_converged && js < nsmax
+
+            js=js+1;
+            jc=jc+1;
+
+            etapr(jc)=eta;
+
+            [G, Gy] = G_and_Gy(y,true,caseG); % G and Gy.
+            G_mean = mean(G,1);
+            G=G-G_mean;
+
+            Ly = (y-x)/n; % Gradient of the quadratic cost
+            LL=0.;
+            L_old=sum(sum((y-x).^2))/(2*n);
+
+            % Gradient of the penalty terms
+            for l=1:k
+                [P{l}, Py{l}, b{l}, sigma(l)] = P_and_Py_l(G,Gy,f{l},true);
+            end
+
+            % Calculation of the lambdas and Ly:
+            [sigmas,Isigmas]=sort(sigma(1:k),'ascend');
+            sigmas=min(sigmas/sigma_0-0.7,30.);
+            for l=1:k
+                c_uv=sum(sum(Ly.*Py{Isigmas(l)}))/sum(sum(Py{Isigmas(l)}.^2));
+                c_uv=min(c_uv,0);
+                lambda(l)=max(sigmas(l)-c_uv,0);
+                Ly=Ly+lambda(l)*Py{Isigmas(l)};
+                LL=LL+lambda(l)*P{Isigmas(l)};
+            end
+            lambda(Isigmas)=lambda(1:k); % Undo the sorting
+
+        % Step 2 gradient check
+            if grad_check_2 && js == 10 
+                dc = 1e-6;
+                idx_check = 1:5; % subset to avoid many matrix inversions
+                Ly_num = zeros(length(idx_check), 1);
+                
+                [G_base, ~] = G_and_Gy(y, false, caseG);
+                G_base = G_base - mean(G_base, 1);
+                L_base = sum(sum((y-x).^2))/(2*n);
+                for l = 1:k
+                    [P_tmp, ~, ~, ~] = P_and_Py_l(G_base, 0, f{l}, false);
+                    L_base = L_base + lambda(l) * P_tmp;
+                end
+                
+                for idx = 1:length(idx_check)
+                    i_y = idx_check(idx);
+                    y_pert = y;
+                    y_pert(i_y) = y_pert(i_y) + dc;
+                    
+                    [G_pert, ~] = G_and_Gy(y_pert, false, caseG);
+                    G_pert = G_pert - mean(G_pert, 1);
+                    
+                    L_pert = sum(sum((y_pert-x).^2))/(2*n);
+                    for l = 1:k
+                        [P_tmp, ~, ~, ~] = P_and_Py_l(G_pert, 0, f{l}, false);
+                        L_pert = L_pert + lambda(l) * P_tmp;
+                    end
+                    
+                    Ly_num(idx) = (L_pert - L_base) / dc;
+                end
+                
+                fprintf('\n    Gradient Check Step 2 (Stage %d, js = %d)    \n', k, js);
+                fprintf('Max Absolute Error: %e\n', max(abs(Ly(idx_check) - Ly_num)));
+                disp('Analytical Ly (first 5):'); disp(Ly(idx_check)');
+                disp('Numerical Ly (Finite Diff):'); disp(Ly_num');
+                fprintf('\n');
+            end
+
+            Lampr(:,jc)=lambda;
+            Cpr(jc)=L_old;
+            L_old=L_old+LL;
+            Ppr(jc)=LL;
+
+            Lys=sum(sum(Ly.^2));
+
+            y = y - eta*Ly;
+            L_new=sum(sum((y-x).^2))/(2*n);
+
+            [G, ~] = G_and_Gy(y,false,caseG);
+            G_mean = mean(G,1);
+            G=G-G_mean;
+
+            Smax=-1;
+            LL=0;
+            for l=1:k
+                [P{l}, ~, ~, sigma(l)] = P_and_Py_l(G,0,f{l},false);
+                LL=LL+lambda(l)*P{l};
+                Smax=max(Smax,sigma(l));
+            end
+            L_new=L_new+LL;
+
+            if(L_old-L_new > 0.5*eta*Lys-eps)
+                eta=1.01*eta;
+            else
+                eta=0.81*eta;
+            end
+
+            y_not_converged=(Smax > 0.85*sigma_0 || norm(Ly)/sqrt(n) > (k+1)*Lymin);
+
+            % y_not_converged=(Smax > sigma_0);
+
+        end
+    if strcmp(Example, 'Garch') && intermediate_logs
+        RSE = sum((y - y_star).^2) / sum(y_star.^2);
+        eff_Cost = mean((x - y).^2) / 2;
+
+        fprintf('Diagnostics at end of step 2, stage %d\n', k);
+        fprintf('Current Cost |x-y|^2/(2T): %.4f\n', eff_Cost);
+        fprintf('Relative Sqd Error for Y : %.4f\n', RSE);
+        fprintf('\n');
+
+        fprintf('Step 2 iterations (js)   : %d / %d\n', js, nsmax);
+        
+        if js == nsmax
+            fprintf('Note: Step 2 hit iteration limit.\n');
+        end
+        
+        fprintf('Max corr of new Y against past f : %.5f  (sigma0 threshold: %.5f)\n', Smax, sigma_0);
+        
+        for l = 1:k
+            % Corr of new Y with old coefficients b{l} found in stage l
+            gg_old_coefs = G * b{l};
+            static_corr = abs(corr(f{l}, gg_old_coefs));
+            
+            % Corr of new Y with optimal coefficients
+            max_corr = sigma(l); 
+            
+            fprintf('  -> new Y against f from stage %d | Old g Corr: %.5f | Max g Corr (sigma(l)): %.5f\n', l, static_corr, max_corr);
+        end
+        fprintf('---------------------------------- \n\n');
+
+    end
+
+
+    end
+
+   
+    if(k == Kmax)
+        not_done_yet=false;
+    else
+        [G, ~] = G_and_Gy(y,false,caseG); % G.
+        G_mean = mean(G,1);
+        G=G-G_mean;
+    end
+end
+
+% figure(1)
+% plot(z,x,'b.')
+% hold on
+% plot(z,y,'r.')
+% xlabel('z')
+% ylabel(['x and y'])
+% hold off
+
+
+figure(2)
+plot(Cpr(1:jc),'b')
+hold on
+plot(Ppr(1:jc),'r')
+ylabel('Cost and Penalty')
+hold off
+
+figure(3)
+plot(etapr(1:jc),'g')
+ylabel('\eta')
+
+figure(4)
+plot(Lampr(1:k,1:jc)','g')
+ylabel('\lambda')
+lambda
+figure(5)
+plot(noise,x,'b*')
+xlabel('noise')
+ylabel('x')
+
+figure(6)
+plot(noise,y,'r*')
+xlabel('noise')
+ylabel('y')
+
+
+if strcmp(Example, 'Garch')
+    RSE = sum((y - y_star).^2) / sum(y_star.^2);
+    eff_Cost = mean((x - y).^2)/2; 
+    fprintf('\n----------------------------------------\n');
+    fprintf('Final Penalty              : %.4f\n', Ppr(jc));
+    fprintf('Final Cost ||x-y||^2/(2T) : %.4f\n', eff_Cost);
+    fprintf('Predicted Cost Value  : %.4f\n', predicted_val);
+    fprintf('Relative Sqd Error for Y : %.4f\n', RSE);
+end
+
+if strcmp(Example, 'Markov_3')
+    
+    eff_Cost = mean((x - y).^2)/2 ; 
+    predicted_val = var(f_star)/2;
+    y_star = noise;
+    RSE = sum((y - y_star).^2) / sum(y_star.^2);
+    
+    fprintf('Final Cost ||x-y||^2/(2T) : %.4f\n', eff_Cost);
+    fprintf('Predicted Cost Value  : %.4f\n', predicted_val);
+    fprintf('Relative Sqd Error for Y : %.4f\n', RSE);
+end
+
+if strcmp(Example, 'Markov_1')
+    
+    eff_Cost = mean((x - y).^2)/2 ; 
+    predicted_val = var(f_star)/2;
+    y_star = noise;
+    RSE = sum((y - y_star).^2) / sum(y_star.^2);
+    
+    fprintf('Final Cost ||x-y||^2/(2T) : %.4f\n', eff_Cost);
+    fprintf('Predicted Cost Value  : %.4f\n', predicted_val);
+    fprintf('Relative Sqd Error for Y : %.4f\n', RSE);
+end
+
+if strcmp(Example, 'Kalman')
+    y_star = epsi; 
+    
+    eff_Cost = mean((x - y).^2)/2 ; 
+    predicted_val = var(P_kalman)/2 ; 
+    
+    RSE = sum((y - y_star).^2) / sum(y_star.^2);
+    
+    fprintf('Final Cost ||x-y||^2/(2T) : %.4f\n', eff_Cost);
+    fprintf('Predicted Cost Value  : %.4f\n', predicted_val);
+    fprintf('Relative Sqd Error for Y : %.4f\n\n', RSE);
+end
+
+fprintf('\n');

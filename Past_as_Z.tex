@@ -1,0 +1,375 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage{amsmath,fontenc,amsfonts,amsthm,graphicx,mathrsfs,nopageno,amssymb, latexsym, url,bbm,xspace,tikz-cd,algpseudocode,algorithm}
+\usepackage[english]{babel}
+\usepackage[latin1]{inputenc}
+\usepackage{bm}
+\usepackage[vcentering,dvips]{geometry}
+\usepackage{xcolor}
+
+
+\geometry{
+a4paper,
+total={210mm,297mm},
+left=25mm,
+right=25mm,
+top=20mm,
+bottom=20mm,
+}
+
+
+\newcommand{\NN}{\mathbb{N}}
+\newcommand{\CC}{\mathbb{C}}
+\newcommand{\ZZ}{\mathbb{Z}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\QQ}{\mathbb{Q}}
+\newcommand{\indep}{\perp \!\!\! \perp}
+\newcommand{\E}{\mathbf E}
+\newcommand{\R}{\mathbf R}
+\theoremstyle{definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{question}[theorem]{Question}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{claim}[theorem]{Claim}
+\newtheorem{observation}[theorem]{Observation}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{example}[theorem]{Example}
+
+
+\begin{document}
+
+
+\title{New OTBP with z capturing the past of x.}
+
+
+\maketitle
+
+
+\section{The problem}
+
+
+$$ \min_y \E[c(x, y)], \quad y(t) \indep x(s < t), $$
+%
+where the times $t$ are temporarily discrete and lie on a regular time grid. We introduce a variable $z$ such that $z(t)$ captures all information from the past of $x$ relevant to its current state and future, and rewrite the problem is the form
+%
+$$ \min_y \E[c(x, y)], \quad y \indep z. $$
+%
+In a more complete version of the problem, $z$ may include other covariates unrelated to the past of $x$, $z = z^{past} \cup z^{others}$.
+
+
+\section{Relaxation}
+
+
+$$ \min_{y, h} \E[c(x, y)], \quad \forall f \in \mathcal F, g \in \mathcal G, h \in \mathcal H,  \  g(y) \perp f(z), \quad z_n = h\left(z_{n-1}, x_{n-1} \right),  $$
+%
+since, if $z_i$ is to capture all relevant information from $\{x_{j < i}\}$, it can be represented inductively as
+%
+$$ z_n = h\left(z_{n-1}, x_{n-1} \right). $$
+%
+In the more general case, we would have
+%
+$ z^{past}_n = h\left(z^{past}_{n-1}, x_{n-1}, z^{others}_{n-1} \right)$.
+%
+
+
+The dimension $d_z$ of $z$ is for us to choose. For instance, if the process is suspected to be linear and Markov with $k$ steps from the past, and $x$ has dimension $d_x$, a natural choice would have $d_z = d_x \times k$, since this is the maximal amount of information required. Then  $z_n$ could consist of a matrix with all components of $x$ between $n-1$ and $n-k$, and the function $h$ would simply shift the columns of $z_{n-1}$ to the right, dropping the last one and adding as first column $x_{n-1}$. But, of course, we should not assume that we know so much about the dynamics. On the other hand, this example suggests that moving things to the right should be an element $h$ of $\mathcal H$; this is satisfied automatically if $\mathcal H$ includes linear functions of $z$.
+
+
+\medskip
+\noindent
+{\bf Note:} 
+%
+$$  \arg\max_{f,g} \left\{\E\left[\left(f - \E[f]\right) \left(g - \E[g]\right) \right] - \frac{1}{2} \E\left[\left(f - \E[f]\right)^2\right] \E\left[\left(g - \E[g]\right)^2\right]\right\} =  
+\arg\max_{f,g} \hbox{corr} (f, g), $$ 
+%
+where
+%
+$$ \hbox{corr} (f, g) = \frac{\E\left[\left(f - \E[f]\right) \left(g - \E[g]\right) \right]}{\E\left[\left(f - \E[f]\right)^2\right]^{\frac{1}{2}} \E\left[\left(g - \E[g]\right)^2\right]^{\frac{1}{2}}}. $$
+%
+Moreover,
+%
+$$  \max_{f,g} \left\{\E\left[\left(f - \E[f]\right) \left(g - \E[g]\right) \right] - \frac{1}{2} \E\left[\left(f - \E[f]\right)^2\right] \E\left[\left(g - \E[g]\right)^2\right]\right\} =  
+\frac{1}{2} \left(\max_{f,g} \hbox{corr} (f, g)\right)^2. $$
+
+
+\medskip
+\noindent
+{\bf Proof:} Write $f = \alpha \tilde{f}$, $g = \beta \tilde{g}$, where 
+%
+$$ \E\left[\left(\tilde{f} - \E[\tilde{f}]\right)^2\right] = \E\left[\left(\tilde{g} - \E[\tilde{g}]\right)^2\right] = 1.$$
+%
+Then
+%
+\begin{eqnarray*}
+ \max_{f,g} \left\{\E\left[\left(f - \E[f]\right) \left(g - \E[g]\right) \right] - \frac{1}{2} \E\left[\left(f - \E[f]\right)^2\right] \E\left[\left(g - \E[g]\right)^2\right]\right\} &=& \\
+ \max_{\alpha, \beta, \tilde{f},\tilde{g}} \left\{\alpha \beta\ \E\left[\left(\tilde{f} - \E[\tilde{f}]\right) \left(\tilde{g} - \E[\tilde{g}]\right) \right] - \frac{\alpha^2 \beta^2}{2} \right\} &=& \\
+ \max_{\alpha \beta, \tilde{f},\tilde{g}} \left\{\alpha \beta \ \hbox{corr} \left(\tilde{f}, \tilde{g}\right) - \frac{\alpha^2 \beta^2}{2} \right\} &=& \\
+ \max_{f,g} \left\{\hbox{corr} \left(f, g\right) \ \hbox{corr} \left(f, g\right) - \frac{\hbox{corr} \left(f, g\right)^2}{2} \right\} &=& \\
+ \frac{1}{2}\max_{f,g} \left\{\hbox{corr} \left(f, g\right)^2 \right\} &&
+\end{eqnarray*}
+
+
+\section{Stages}
+
+
+Set $y^0 = x$. Then, in stage $k$, with $1 \le k \le K$, perform the following two steps:
+
+
+\begin{enumerate}
+
+
+\item Find $h^k$ and $f^k(z^k)$ through
+%
+$$ \left[h^k, f^k, g^k\right] = \arg\max_{h,f,g} \left\{\E\left[\left(f - \E[f]\right) \left(g - \E[g]\right) \right] - \frac{1}{2} \E\left[\left(f - \E[f]\right)^2\right] \E\left[\left(g - \E[g]\right)^2\right]\right\} , $$
+%
+$$ z^k_n = h^k\left(z^k_{n-1}, x_{n-1} \right), \quad  z^k_0 \ \hbox{fixed at a non-informative value,} $$
+%
+and normalize $f^k$ so that $\E[f^k] = 0$, $\E[{f^k}^2] = 1$. The expected values $\E$ here stand for the empirical mean over all times from some $i_0$ (the warm-up time) up to the present.
+
+
+\item Find $y^k$ through
+%
+$$ \min_y \E[c(x, y)], \quad \forall g \in \mathcal G, \  g(y) \perp \left\{f^1(z^1), \ldots, f^k(z^k) \right\}, $$
+%
+reformulated as
+%
+$$ \min_y L = \left\{\E[c(x, y)]  +  \sum_{l=1}^k  \lambda_l \max_{g^l} \left\{\E\left[f^l g^l \right] - \frac{1}{2} \E\left[\left(g^l - \E[g^l]\right)^2\right]\right\} \right\}. $$
+%
+
+
+\end{enumerate}
+
+
+
+
+
+
+\section{The linear setting}
+
+
+In the simplest setting, $\mathcal F$ , $\mathcal G$ and $\mathcal H$ are linear spaces, i.e.
+%
+$$ f = F a, \quad g = G b,  \quad h = H c,$$
+%
+where the columns of $F$, $G$ and $H$ are pre-established functions of $z$, $y$ and $(z, x)$ respectively (they may depend on $k$ though, since we may want to make them richer as the algorithm progresses.) While $a$ and $b$ are vectors, $c$ is a matrix if $d_z > 1$, so
+%
+$$ z_{n}^i = \sum_{j=1}^{m_h} H^j\left(z_{n-1}, x_{n-1}\right) c_j^i. $$
+
+
+\subsection{Step 1}
+
+
+Step 1 adopts the form of an alternation between optimizing over $h$ and over $f$ and $g$:
+%
+\begin{enumerate}
+
+
+\item Given $h$, we know $z$. To prevent blowup we will normalize it $\tilde{z}=\frac{z-\bar{z}}{\text{sd}(z)}$ before feeding it to $F$. Then we also remove the means from $F$ and $G$, and write
+%
+$$ \max_{a,b} \left\{ a' A b - \frac{1}{2 N} \|\tilde{F} a\|^2 \|\tilde{G} b\|^2 \right\} , \quad A = \tilde{F}' \tilde{G}, $$
+%
+where $N$ is the number of samples and $\tilde{X}=X-\bar{X}$ denotes the centered matrices. This can be maximized alternatively over $a$ and $b$, with
+%
+$$ a^{h} = \frac{n}{\|\tilde{G} b^h\|^2} (\tilde{F}' \tilde{F})^{-1} A b^h, \quad b^{h+1} = \frac{n}{\|\tilde{F} a^{h}\|^2} (\tilde{G}' \tilde{G})^{-1} A'a^{h}. $$
+
+
+
+
+\item Given $f=\tilde{F}a$ and $g=\tilde{G}b$, we can optimize over the parameters $c$ of $h$ through gradient descent
+%
+$$ \max_{c} M(z) =  g' f(z)  - \frac{1}{2 N} \|f(z)\|^2 \|g\|^2 , \quad  z_n = H\left(z_{n-1}, x_{n-1} \right) c, \quad  z_1 = z_0, $$
+%
+i.e.
+%
+$$ {c_{k}^h}^{l+1} = {c_{k}^h}^l + \eta^l \frac{\partial M}{\partial c_{k}^h}, $$
+%
+where
+%
+\begin{equation}\label{eqdev} \frac{\partial M}{\partial c_{k}^h} = \sum_{n=i_0}^N \sum_{j=1}^{d_z} \frac{\partial M}{\partial \tilde{z}^j_n} \frac{\partial \tilde{z}^j_n}{\partial c_{k}^h},
+\end{equation}
+%
+The second term in each summand of (\ref{eqdev}) is given by
+%
+$$ \frac{\partial \tilde{z}^j_n}{\partial c_{k}^h}=\sum_{m=1}^{N}\frac{\partial \tilde{z}^j_n}{\partial z^j_m}\frac{\partial z^j_m}{\partial c_{k}^h} $$
+%
+with
+\begin{align}\frac{\partial \tilde{z}_n^j}{\partial z_m^j} &= \frac{1}{\text{sd}(z^j)^2}\left(\frac{\partial}{\partial z_m^j}(z_n^j - \bar{z}^j) \cdot \text{sd}(z^j) - (z_n^j - \bar{z}^j) \cdot \frac{\partial (\text{sd}(z^j))}{\partial z_m^j}\right)\nonumber\\
+&= \frac{\left( \delta_{n}^m - \frac{1}{N} \right)\text{sd}(z^j) - (z_n^j - \bar{z}^j)\left( \frac{z_m^j - \bar{z}^j}{N\text{sd}(z^j)} \right)}{\text{sd}(z^j)^2}= \frac{1}{\text{sd}(z^j)} \left( \delta_{n}^m - \frac{1}{N} - \frac{\tilde{z}^j_n \tilde{z}^j_m}{N} \right)  \nonumber
+\end{align}
+%
+and
+%
+$$ \frac{\partial z^j_m}{\partial c_{k}^h} = \delta_h^j H^k\left(z_{m-1}, x_{m-1} \right) + \sum_{p=1}^{d_z} \sum_{k=1}^{m_h} \left(\frac{\partial H^k}{\partial z^p_{i-1}}  c^j_k \right) \frac{\partial z^p_{i-1}}{\partial c_{k}^h} ,
+\quad \frac{\partial z_0}{\partial c_{k}^h} = 0, $$
+while the first term in each summand of (\ref{eqdev}) is given by
+%
+\begin{align} \frac{\partial M}{\partial \tilde{z}^j_n} &= \sum_{m=1}^N\frac{\partial M}{\partial f_m}\frac{\partial f_m}{\partial \tilde{z}^j_n} =\sum_{m=1}^N\left[g_m - \frac{\|g\|^2}{N} f_m\right]\sum_{k=1}^{m_F}a_k \frac{\partial F_{k,m}-\bar{F}_k}{\partial \tilde{z}^j_n}=\nonumber\\
+&=\sum_{m=1}^N\left[g_m - \frac{\|g\|^2}{N} f_m\right]\sum_{k=1}^{m_F}a_k \left(\delta_n^m-\frac{1}{N}\right) \frac{\partial F_{k,n}}{\partial \tilde{z}^j_n}=\nonumber\\
+&=\left(U_n-\frac{1}{N}\sum_{m=1}^N U_m\right) \sum_{k=1}^{m_F}a_k  \frac{\partial F_{k,n}}{\partial \tilde{z}^j_n}=(U_n-\bar{U})\frac{f}{\partial \tilde{z}_n^j}
+\end{align}
+where $U_n=\frac{\partial M}{\partial f_n}=g_n - \frac{\|g\|^2}{N} f_n$
+%
+The system for the $\{\frac{\partial z_i}{\partial c_{k}^h}\}$ can be solved in a single forward pass. We should pick the initial $c^0$ carefully to avoid blow-ups; one possible choice is the one corresponding to
+%
+$$ h(z, x)\Big|_{c^0} =  x, $$
+%
+which would be the right guess for a one-step Markov process.
+
+
+By the same token, the initial learning rate $\eta^0$ should be chosen small.
+
+
+%We still need to define an initialization, for we either need an initial $z$ to find $a$ and $b$, or initial $a$ and $b$ to find $z$. A simple choice is to start with $z_n = x_{n-1}$, which would be the right guess for a one-step Markov process.
+
+
+\subsubsection{Alternatives}
+
+
+The procedure above has a potential problem: as a function of $c$, the objective function $M$ is highly non-linear and almost surely highly non-convex, so gradient descent has the risk of either getting trapped near a local maximum or simply blow-up (which it currently does sometimes.) Here's a candidate remedy: replace the true derivative $ \frac{\partial z^j_l}{\partial c_{k}^h}$ by
+%
+$$ \frac{\partial z^j_l}{\partial c_{k}^h} = \delta_h^j H^k\left(z_{l-1}, x_{l-1} \right) + \alpha \sum_{p=1}^{d_z} \sum_{m=1}^{m_h} \left(\frac{\partial H^m}{\partial z^p_{i-1}}  c^j_m \right) \frac{\partial z^p_{i-1}}{\partial c_{k}^h} ,
+\quad \frac{\partial z_0}{\partial c_{k}^h} = 0 ,$$
+%
+with $0 \le \alpha \le 1$. Having $\alpha = 0$ corresponds to freezing $H$ at the current values of $z$, i.e. considering the dependence of $M$ on $z$ only through $F$, which is presumably far less non-convex in $c$. The proposal is to increase $\alpha$ slowly from $0$ to $1$. We can explore this or other alternatives to plain gradient descent over $c$.
+
+
+Another option is to solve the problem with various initial values for $c$, discard those that lead to blow-up, and select the one with maximal resulting $M$.
+
+
+Still another option is to have functional spaces for F and H that start very poor and slowly evolve into the desired ones.
+
+
+Here's another, somewhat crazy idea. Consider the recurrence formula for $z$,
+%
+$$ z_{n}^i = \sum_{j=1}^{m_h} H^j\left(z_{n-1}, x_{n-1}\right) c_j^i. $$
+%
+If the $z_n^i$ were known, this would be a linear system for $c$, severely overdetermined. Now, we have an idea of what we would like the $z$'s to be: $f(z)$ must be as correlated to $g(y)$ as possible. For instance, if $y$ and $z$ were one-dimensional, it would be great --though clearly impossible-- to have $z = y$. The crazy idea is to propose a guess like this --a wish rather than a guess!-- and compute the corresponding $c$ through the least-square error solution of the recurrence above. This could provide a good initial guess for the true $c$. What guess to propose when $z$ is multi-dimensional is something to scratch our heads about.
+
+
+A variation of this idea which does not involve any arbitrary guess/wish, ascends $M$ in a completely different fashion: given the current $z$, it figures out a new tentative $z$ through
+%
+$$ z^* = z + \eta \frac{\partial M}{\partial z} $$
+%
+(notice that this step has no reference to $c$.) Then it finds $c$ by least-square regressing the recurrence relation, and finally computes the true new $z$ through the recurrence using the $c$ just computed. 
+
+
+
+
+\end{enumerate}
+
+
+\subsection{Step 2}
+
+
+For each of the inner maximizations in the second step, we again remove the mean from $G$, and have
+%
+$$ C^l =  \max_{b^l} \left\{\frac{{f^l}' g^l}{n} - \frac{1}{2n} {g^l}' g'\right\}, \quad  g^l = G b^l, $$
+%
+with explicit solution
+%
+$$ b^l = \left(G' G\right)^{-1} G' f^l. $$
+%
+Notice that, in order to compute
+%
+$$ \frac{\partial C^l}{\partial \alpha}, $$
+%
+where $\alpha$ is any parameter on which $G$ may depend (in our current context, the $\{y_j\}$), it is enough to differentiate $G$, with $b$ fixed at its current optimal value. This allows us to perform gradient descent of $L$ over the $\{y_j\}$ very straightforwardly.
+
+
+Notice too that in Step 1 there is a way to bypasss the updates for $b$ and $g$, since we only care about updating $f^k$. Indeed, the alternating updates for $a^h$ and $b^{h+1}$ above are equivalent to
+
+
+$$ f^{h} = \frac{n}{\|g^h\|^2} F(F^t F)^{-1} F^t g^h=\frac{n}{\|g^{h}\|^2} P_\mathcal{F}g^{h}=\frac{\widehat{\E}[g^h\mid X]}{\widehat{\text{Var}}(g^h)}$$
+$$g^{h+1} = \frac{n}{\|f^{h}\|^2} G(G^t G)^{-1} G^tf^{h}=\frac{n}{\|f^{h}\|^2} P_\mathcal{G}f^{h}=\frac{\widehat{\E}[f^h\mid Y]}{\widehat{\text{Var}}(f^h)} $$
+This update step is in turn equivalent to the ACE (Alternating Conditional Expectations) algorithm to solve the maximal correlation $\max_{f,g}\text{corr}(f(X),g(Y))$, which shouldn't be surprising since, as was shown in Section 2, both penalties have the same argmax.
+
+
+As in the ACE algorithm, these equations can be composed to remove $g$ and $b$ from the update and get
+$$f^h=\frac{\|f^{h-1}\|^2}{\|P_\mathcal{G}f^{h-1}\|^2
+} P_\mathcal{F}P_\mathcal{G}f^{h-1}$$
+an equation that concerns $f$ alone.
+
+
+The solution then corresponds to finding an eigenvector $f^*$ of the operator $P_\mathcal{F}P_\mathcal{G}$ with eigenvalue $\lambda^2=\frac{\|P_\mathcal{G}f^*\|^2}{\|f^*\|^2}$. It can be seen that $\lambda$ is indeed the maximal correlation.
+
+
+\subsection{Evolving the $\{\lambda_k\}$}
+
+
+We can evolve the $\{\lambda_k\}$ based on a target maximal correlation $\sigma_*$ between the $g$'s and $f$'s. We have
+%
+$$ \frac{\partial L}{\partial y_i} = \frac{y_i - x_i}{n} +  \sum_k \lambda_k \frac{\partial C^k}{\partial y_i}. $$
+%
+Rearranging the $k$'s so that the current $\{|\sigma_k|\}$ are sorted in increasing order, we will determine the corresponding $\{\lambda_k\}$ sequentially, as follows. Assume that we have already determined all $\{\lambda_k\}$ up to $k = l-1$. Then, compute
+%
+$$ u_i = \frac{y_i - x_i}{n} +  \sum_{k=1}^{l-1} \lambda_k \frac{\partial C^k}{\partial y_i} , \quad v_i = \frac{\partial C^l}{\partial y_i},$$ 
+%
+$$ \gamma = \min \left(\frac{\sigma_l}{\sigma_*}  - 0.9, 10\right) $$
+%
+and the normalized inner product
+%
+$$ c_{uv} = \frac{(u, v)}{\|v\|^2} = \frac{\sum_i u_i \cdot v_i}{\sum_i \|v_i\|^2}. $$
+%
+If $c_{uv} < 0$ (the typical case), we minimize $\lambda_l \ge 0$ subject to the constraint that
+%
+$$ c_{uv} + \lambda_l \ge \gamma,  $$
+%
+i.e. we set
+%
+$$ \lambda_l = \max\left(\gamma-c_{uv}, 0\right). $$ 
+%
+If $c_{uv} \ge 0$, we set
+%
+$$ \lambda_l = \max\left(\gamma, 0\right). $$ 
+%
+
+
+The logic behind this choice works in the reverse order of the $\{\sigma_k\}$, starting with the largest one. The corresponding $\lambda_k$ establishes a balance between the gradient of $C^k$ and the remaining components of the gradient.  In the worst scenario, these are pointing in opposite directions (In the other extreme scenario, where the point in exactly the same direction, the value of $\lambda_k$ is immaterial.) We  would like the gradient of $C^k$ to prevail in this balance when $\sigma_k > \sigma_*$, but not when $\sigma_k < \sigma_*$. Using a threshold of $0.9$ rather than $1$ pushes $\sigma_l$ a bit beyond $\sigma_*$.
+
+
+
+
+\subsection{Termination criteria}
+
+
+Each stage should terminate when the target correlation is reached (this target can be made to depend on the stage if desired.) The value of $K$ can also be decided based on the correlation between the optimal $\{f_K, g_K\}$ being below a threshold. After this threshold has been achieved for the last stage, we continue the gradient descent over $y$ with the $\{\lambda_k\}$ fixed at their most recent values until the gradient of $L$ is small enough for the inversion step to be valid.
+
+
+\section{Nonlinear setting}
+
+
+Going nonlinear is straightforward, based on the comment above about the derivatives of the $C^l$, which extends to step 1 as well (here $a$ and $b$ are kept fixed when differentiating.) If $F$ and $G$ depend on parameters, such as kernel centers or bandwidths, or the $\{z^k\}$ when these represent the past, we can optimize over these too, alternating their optimization with the one over $a$ and $b$ for step 1 and over the $\{b^l\}$ for step 2.
+
+
+\section{Map inversion}
+
+
+At convergence, we have
+%
+$$ \frac{\partial L}{\partial y_i} = 0, $$
+%
+where
+%
+$$ L = \sum_{i=1}^n \left[ \left\|y_i - x_i\right\|^2 + \lambda \sum_{l=1}^k \left\{f_i^l g^l\left(y_i\right) - \frac{1}{2} \left[\left(g^l\left(y_i\right) - \E[g^l]\right)^2 \right] \right\} \right] , \quad \E[g^l] = \frac{1}{n} \sum_{j=1}^n g^l\left(y_j\right) . $$
+%
+Then
+%
+$$ \frac{\partial L}{\partial y_i} = y_i - x_i + \lambda \sum_{l=1}^k \frac{\partial g^l}{\partial y_i} \left\{f_i^l - \frac{n-1}{n} \left(g^l\left(y_i\right) - \E[g^l]\right)  \right\} = 0. $$
+%
+Extending the validity of this expression to any pair $(y, z)$ yields
+%
+$$ x = y + \lambda \sum_{l=1}^k \frac{\partial g^l}{\partial y} \left\{f^l\left(z\right) - \frac{n-1}{n} \left(g^l\left(y\right) - \E[g^l]\right) \right\} ,$$
+%
+an explicit formula for
+%
+$$ x = T^{-1}\left(y, z\right). $$ 
+%
+Notice that the dependence of $x$ in $z$ is affine in the $k$ factors $\left\{f^l(z)\right\}$.
+
+
+
+
+\end{document}
