@@ -3,11 +3,9 @@ import torch.nn as nn
 import numpy as np
 import GenerateData as gd
 
-#Same schedule as SimpleMaxMin but G is a GRU (using torch nn.gru class)
+#Same two step schedule as MATLAB codes but G (equivalent to H in MATLAB) is a GRU (using torch nn.gru class)
 
-# ==========================================
-# 1. Feature Space Module
-# ==========================================
+# Feature Space Module
 class FeatureSpace(nn.Module):
     def __init__(self, feature_type='poly', degree=3, num_centers=10, data_bounds=(-2, 2)):
         super().__init__()
@@ -44,9 +42,8 @@ class FeatureSpace(nn.Module):
             grads = -2.0 * self.gamma * diff * features
         return grads
         
-# ==========================================
-# 2. RNN Architecture (G_w)
-# ==========================================
+
+# RNN Architecture (G_w)
 class Gw_RNN(nn.Module):
     def __init__(self, input_dim=1, hidden_dim=7, num_layers=1):
         super().__init__()
@@ -55,18 +52,15 @@ class Gw_RNN(nn.Module):
         self.readout = nn.Linear(hidden_dim, 1)
 
     def forward(self, x_past):
-        # x_past shape: (1, T, input_dim)
         out, _ = self.gru(x_past)
-        z = self.readout(out) # Shape: (1, T, 1)
-        z = z.squeeze(0)      # Shape: (T, 1)
+        z = self.readout(out) 
+        z = z.squeeze(0)      
         
-        # Strictly center Z
         z = z - z.mean()
         return z
 
-# ==========================================
-# 3. Step 1: Maximizer (Update G_w)
-# ==========================================
+
+# Step 1: Outer maximizer 
 def step_1_maximizer(model, x_past, y_fixed, feature_module, lr=2e-2, max_steps=300, tol=1e-4, burn_in=0, min_steps=10):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     
@@ -106,13 +100,11 @@ def step_1_maximizer(model, x_past, y_fixed, feature_module, lr=2e-2, max_steps=
         
     return model, Z_final.detach()
     
-# ==========================================
-# 4. Step 2: Minimizer (Update Y via Custom GD)
-# ==========================================
+# Step 2: Inner minimizer (via custom gradient descent)
 def step_2_minimizer(x, y_init, Z_k, feature_module, sigma_star=0.05, 
                      use_adaptive_lambda=False, lam_c = 2.0, fixed_lambda=500.0, max_iter=20, burn_in=0):
     
-    # 1. Initialize y (NO requires_grad needed!)
+
     y = y_init.clone().detach()
     T = x.shape[0]
     n_burn = T - burn_in 
@@ -124,7 +116,7 @@ def step_2_minimizer(x, y_init, Z_k, feature_module, sigma_star=0.05,
     eta = 0.1
     Lymin = 1e-5
 
-    # Completely disable autograd for the line search
+    # disable autograd for the line search
     with torch.no_grad():
         for js in range(max_iter):
             
@@ -137,15 +129,15 @@ def step_2_minimizer(x, y_init, Z_k, feature_module, sigma_star=0.05,
             G_cov = G_burn.t() @ G_burn
             G_precision = torch.inverse(G_cov + 1e-6 * torch.eye(G_burn.shape[1], device=x.device))
             
-            Z_burn = Z_k[burn_in:] # Shape: (T_burn, K)
+            Z_burn = Z_k[burn_in:] 
             
             # Vectorized feature projection across all K columns
-            ZtG = Z_burn.t() @ G_burn      # (K, D)
-            W = G_precision @ ZtG.t()      # (D, K)
+            ZtG = Z_burn.t() @ G_burn      
+            W = G_precision @ ZtG.t()     
             
             # num is the diagonal of ZtG @ W
-            num = torch.sum(ZtG.t() * W, dim=0)       # (K,)
-            den = torch.sum(Z_burn**2, dim=0) + 1e-8  # (K,)
+            num = torch.sum(ZtG.t() * W, dim=0)       
+            den = torch.sum(Z_burn**2, dim=0) + 1e-8  
             
             P_l = 0.5 * num / den 
             sigma_l = torch.sqrt(torch.clamp(2.0 * P_l, min=1e-8))
@@ -155,14 +147,14 @@ def step_2_minimizer(x, y_init, Z_k, feature_module, sigma_star=0.05,
             # Compute analytical gradients
             LLy = torch.zeros_like(y)
             H = torch.zeros_like(y)
-            E = Z_burn - (G_burn @ W) # Residuals (T_burn, K)
+            E = Z_burn - (G_burn @ W) 
             
             for k in range(Z_k.shape[1]):
                 E_k = E[:, k:k+1] 
                 W_k = W[:, k:k+1]
                 adj = E_k @ W_k.t()
                 
-                # Chain Rule through the mean-centering operation
+                # Chain Rule through the centering 
                 adj_centered = adj - adj.mean(dim=0, keepdim=True)
                 dN_dy = 2.0 * torch.sum(adj_centered * dG_burn, dim=1, keepdim=True)
                 dP_l_dy = 0.5 * dN_dy / den[k]
@@ -186,7 +178,7 @@ def step_2_minimizer(x, y_init, Z_k, feature_module, sigma_star=0.05,
             total_grad = Ly + lam * LLy
             Lys = torch.sum(total_grad**2).item()
             
-            # Line Search
+            # Line search
             y_new = y - eta * total_grad
             
             G_new = feature_module(y_new)
@@ -194,7 +186,7 @@ def step_2_minimizer(x, y_init, Z_k, feature_module, sigma_star=0.05,
             G_cov_new = G_new_burn.t() @ G_new_burn
             G_prec_new = torch.inverse(G_cov_new + 1e-6 * torch.eye(G_new_burn.shape[1], device=x.device))
             
-            # Vectorized evaluation of L_new
+
             ZtG_new = Z_burn.t() @ G_new_burn
             num_new = torch.sum((ZtG_new @ G_prec_new) * ZtG_new, dim=1)
             P_l_new = 0.5 * num_new / den
@@ -222,9 +214,8 @@ def step_2_minimizer(x, y_init, Z_k, feature_module, sigma_star=0.05,
 
     return y
 
-# ==========================================
-# 5. The Epoch Loop
-# ==========================================
+
+# Epoch/Stage Loop
 def run_epoch_e1(x, x_past, K_e=6, steps_G=300, ymin_iters=20, feature_type='poly', degree=3, tol=2e-4, lam_c=2.0, 
                  sigma_star_accept=0.03, sigma_star_terminate=0.015, max_retries=5, warm_start_G=False, 
                  hidden_dim=5, Ystar=None, burn_in=0, min_steps=10):
@@ -235,7 +226,7 @@ def run_epoch_e1(x, x_past, K_e=6, steps_G=300, ymin_iters=20, feature_type='pol
     y_current = x.clone()
     Z_history = []
     
-    # Store the state dict of the successfully extracted G_w from the previous stage
+
     prev_G_state = None
     
     for k in range(K_e):
@@ -244,10 +235,10 @@ def run_epoch_e1(x, x_past, K_e=6, steps_G=300, ymin_iters=20, feature_type='pol
         valid_Z_found = False
         
         for attempt in range(max_retries):
-            # Instantiate a fresh model for every attempt
+            #  New fresh model for every attempt
             model_k = Gw_RNN(input_dim=1, hidden_dim=hidden_dim)
             
-            # Apply warm start ONLY on the first attempt if enabled and a previous state exists
+            # Apply warm start only on the first attempt if enabled and a previous state exists
             if warm_start_G and prev_G_state is not None and attempt == 0:
                 model_k.load_state_dict(prev_G_state)
             
@@ -265,8 +256,6 @@ def run_epoch_e1(x, x_past, K_e=6, steps_G=300, ymin_iters=20, feature_type='pol
                 min_steps = min_steps
             )
             
-            # Dynamic termination
-            # Recalculate the final objective value to find the correlation R
             with torch.no_grad():
                 G = feature_module(y_current)
                 G_burn = G[burn_in:]
@@ -278,10 +267,10 @@ def run_epoch_e1(x, x_past, K_e=6, steps_G=300, ymin_iters=20, feature_type='pol
                 denominator = (Z_k_burn.t() @ Z_k_burn) + 1e-8
                 final_loss = -0.5 * (numerator.squeeze() / denominator.squeeze()).item()
                 
-            # Since loss = -0.5 * R^2, then R = sqrt(-2 * loss)
+ 
             max_corr = np.sqrt(max(-2.0 * final_loss, 0.0))
             
-            # Apply Dual Threshold Logic
+ 
             if max_corr >= sigma_star_accept:
                 print(f"      [Attempt {attempt+1}] Accepted extracted correlation: {max_corr:.4f}")
                 valid_Z_found = True
@@ -298,32 +287,29 @@ def run_epoch_e1(x, x_past, K_e=6, steps_G=300, ymin_iters=20, feature_type='pol
         if not valid_Z_found:
             print(f"      [!] Terminating stages early. No strong correlation found.")
             break
-        # --------------------------------
-            
-        # ... [inside run_epoch_e1] ...
+
         Z_history.append(Z_k)
         
         Z_bank = torch.cat(Z_history, dim=1)
         
-        # Pass y_current as y_init to warm-start the optimization
+        # Pass y_current to warm-start the optimization
         y_current = step_2_minimizer(
             x=x, y_init=y_current, Z_k=Z_bank, feature_module=feature_module, 
             use_adaptive_lambda=True, lam_c=lam_c,max_iter=ymin_iters, sigma_star=sigma_star_accept, burn_in=burn_in
         )
         
-        # Compute final MSE ignoring the burn_in
         mse = torch.mean((x[burn_in:] - y_current[burn_in:])**2).item()
         print(f" Step 2  |  MSE(X, Y): {mse:.4f}")
-        # ...
+        
         if Ystar is not None:
             Diff =  ((Ystar[burn_in:] - y_current[burn_in:].detach().numpy().squeeze())**2).mean()
             print(f"   |Y-Y*|^2/|Y*|^2={Diff.item()/(Ystar[burn_in:]**2).mean():.4f}")        
             
     return y_current, Z_history
 
-# ==========================================
-# 6. Main Execution
-# ==========================================
+
+# Main Execution
+
 if __name__ == "__main__":
     
     T = 3000
@@ -356,14 +342,14 @@ if __name__ == "__main__":
   
     x = torch.tensor(x_np, dtype=torch.float32).unsqueeze(1) # Shape: (T, 1)
     
-    # 2. Construct x_past respecting the filtration (shift by 1)
+
     x_past = torch.cat([torch.zeros(1, 1), x[:-1]], dim=0)
     x_past = x_past.unsqueeze(0) # Shape: (1, T, 1) for the GRU
     
-    # Define burn_in parameter
+
     burn_in_steps = 300
     
-    # Update expected Equilibrium output to also ignore the burn-in period
+
     print(f"Equilibrium V = |Pred|^2 = {(P[burn_in_steps:]**2).mean():.4f}")
     
     tol = 1e-4
@@ -374,12 +360,11 @@ if __name__ == "__main__":
     ymin_iters = 1500
     lam_c = 3.0
     
-    # --- NEW TOGGLES ---
+
     max_retries = 5
     warm_start_G = True 
-    # -------------------
+
     
-    # 3. Run the algorithm
     print(f"Starting OTBP Noise Extraction for GARCH(1,1) (T={T}, burn-in={burn_in_steps})...")
     y_final, Z_bank = run_epoch_e1(
         x=x, 
